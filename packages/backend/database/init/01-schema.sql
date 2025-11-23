@@ -621,25 +621,25 @@ CREATE TRIGGER update_test_suite_defs_updated_at BEFORE UPDATE ON test_suite_def
 
 -- View: Test coverage summary per requirement
 CREATE OR REPLACE VIEW requirement_coverage_summary AS
-SELECT 
+SELECT
     r.id as requirement_id,
     r.name as requirement_name,
     r.workspace_id,
     COUNT(DISTINCT rtm.test_case_id) as total_test_cases,
-    COUNT(DISTINCT CASE WHEN tc.status = 'Passed' THEN tc.id END) as passed_tests,
-    COUNT(DISTINCT CASE WHEN tc.status = 'Failed' THEN tc.id END) as failed_tests,
-    COUNT(DISTINCT CASE WHEN tc.status = 'Not Run' THEN tc.id END) as not_run_tests,
+    COUNT(DISTINCT CASE WHEN tc.status = 'Passed' THEN tc.tc_uuid END) as passed_tests,
+    COUNT(DISTINCT CASE WHEN tc.status = 'Failed' THEN tc.tc_uuid END) as failed_tests,
+    COUNT(DISTINCT CASE WHEN tc.status = 'Not Run' THEN tc.tc_uuid END) as not_run_tests,
     ROUND(
-        CASE 
-            WHEN COUNT(DISTINCT rtm.test_case_id) > 0 
-            THEN (COUNT(DISTINCT CASE WHEN tc.status = 'Passed' THEN tc.id END)::DECIMAL / COUNT(DISTINCT rtm.test_case_id) * 100)
-            ELSE 0 
-        END, 
+        CASE
+            WHEN COUNT(DISTINCT rtm.test_case_id) > 0
+            THEN (COUNT(DISTINCT CASE WHEN tc.status = 'Passed' THEN tc.tc_uuid END)::DECIMAL / COUNT(DISTINCT rtm.test_case_id) * 100)
+            ELSE 0
+        END,
         2
     ) as pass_percentage
 FROM requirements r
-LEFT JOIN requirement_test_mappings rtm ON r.id = rtm.requirement_id
-LEFT JOIN test_cases tc ON rtm.test_case_id = tc.id
+LEFT JOIN requirement_test_mappings rtm ON r.req_uuid = rtm.requirement_id
+LEFT JOIN test_cases tc ON rtm.test_case_id = tc.tc_uuid
 GROUP BY r.id, r.name, r.workspace_id;
 
 -- View: Recent test execution summary
@@ -664,7 +664,7 @@ ORDER BY ter.started_at DESC
 LIMIT 100;
 
 CREATE OR REPLACE VIEW test_suite_summary AS
-SELECT 
+SELECT
     tsd.id,
     tsd.workspace_id,
     tsd.name,
@@ -681,7 +681,7 @@ SELECT
     u.full_name as created_by_name
 FROM test_suite_definitions tsd
 LEFT JOIN test_suite_members tsm ON tsd.id = tsm.suite_id
-LEFT JOIN test_cases tc ON tsm.test_case_id = tc.id
+LEFT JOIN test_cases tc ON tsm.test_case_id = tc.tc_uuid
 LEFT JOIN users u ON tsd.created_by = u.id
 GROUP BY tsd.id, tsd.workspace_id, tsd.name, tsd.version, tsd.suite_type,
          tsd.description, tsd.estimated_duration, tsd.recommended_environment,

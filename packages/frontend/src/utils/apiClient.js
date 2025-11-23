@@ -1,10 +1,11 @@
 import axios from 'axios';
 
-// Create axios instance with a relative URL base path
+// Get API URL from environment variable or use default
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3002';
+
+// Create axios instance with API base URL
 const apiClient = axios.create({
-  // Use relative URL without explicit host or port
-  // This will use the same host/port as the current page (working through Nginx proxy)
-  baseURL: '',
+  baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json',
   },
