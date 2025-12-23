@@ -134,6 +134,27 @@ npm install || error_exit "npm install failed"
 success "Dependencies installed"
 
 # ==============================================================================
+# STEP 3.5: ENVIRONMENT CONFIGURATION
+# ==============================================================================
+section "STEP 3.5: Environment Configuration"
+
+# Check for .env file in backend package
+if [ ! -f "packages/backend/.env" ]; then
+    warning ".env file not found in packages/backend"
+
+    if [ -f "packages/backend/.env.example" ]; then
+        info "Creating .env from .env.example..."
+        cp packages/backend/.env.example packages/backend/.env
+        success ".env file created from template"
+        warning "Please edit ~/quality-tracker-backend/packages/backend/.env with your actual configuration"
+    else
+        warning "No .env.example found - you may need to create .env manually"
+    fi
+else
+    success ".env file exists"
+fi
+
+# ==============================================================================
 # STEP 4: DATABASE MIGRATION (if needed)
 # ==============================================================================
 section "STEP 4: Database Check"
@@ -202,12 +223,32 @@ section "STEP 7: Verifying Services"
 info "Current PM2 status:"
 pm2 status
 
+# Check if services are actually running (not crash-looping)
+WEBHOOK_STATUS=$(pm2 jlist | grep -A 10 "quality-tracker-webhook" | grep '"status"' | cut -d'"' -f4)
+API_STATUS=$(pm2 jlist | grep -A 10 "quality-tracker-api" | grep '"status"' | cut -d'"' -f4)
+
+if [ "$WEBHOOK_STATUS" != "online" ]; then
+    warning "Webhook service status: $WEBHOOK_STATUS"
+    info "Showing last 30 lines of webhook server logs:"
+    pm2 logs quality-tracker-webhook --lines 30 --nostream || true
+    error_exit "Webhook server is not running properly. Check logs above."
+fi
+
+if [ "$API_STATUS" != "online" ]; then
+    warning "API service status: $API_STATUS"
+    info "Showing last 30 lines of API server logs:"
+    pm2 logs quality-tracker-api --lines 30 --nostream || true
+    error_exit "API server is not running properly. Check logs above."
+fi
+
 # Test webhook server
 info "Testing webhook server (port 3001)..."
 WEBHOOK_RESPONSE=$(curl -s http://localhost:3001/api/webhook/health 2>/dev/null || echo "failed")
 if [[ "$WEBHOOK_RESPONSE" == *"healthy"* ]]; then
     success "Webhook server responding"
 else
+    warning "Health check failed, showing webhook server logs:"
+    pm2 logs quality-tracker-webhook --lines 30 --nostream || true
     error_exit "Webhook server health check failed"
 fi
 
