@@ -73,9 +73,15 @@ fi
 
 cd "$FRONTEND_DIR" || error_exit "Cannot change to frontend directory"
 
+# Verify this is the monorepo by checking for packages directory
+if [ ! -d "packages/frontend" ]; then
+    error_exit "Cannot find packages/frontend directory - is this the quality tracker monorepo?"
+fi
+
 # Determine branch to deploy
 DEPLOY_BRANCH="${1:-$(git branch --show-current)}"
 info "Target directory: $FRONTEND_DIR"
+info "Frontend package: packages/frontend"
 info "Deploy branch: $DEPLOY_BRANCH"
 info "Log file: $LOG_FILE"
 
@@ -135,12 +141,12 @@ section "STEP 4: Building Frontend"
 info "Building production bundle..."
 npm run build || error_exit "Build failed"
 
-# Verify build output
-if [ ! -d "dist" ] || [ -z "$(ls -A dist)" ]; then
+# Verify build output (in workspace package directory)
+if [ ! -d "packages/frontend/dist" ] || [ -z "$(ls -A packages/frontend/dist)" ]; then
     error_exit "Build output directory is empty or missing"
 fi
 
-BUILD_SIZE=$(du -sh dist | cut -f1)
+BUILD_SIZE=$(du -sh packages/frontend/dist | cut -f1)
 success "Build successful (Size: $BUILD_SIZE)"
 
 # ==============================================================================
@@ -166,7 +172,7 @@ info "Creating deployment directory..."
 sudo mkdir -p "$DEPLOY_DIR" || error_exit "Failed to create deployment directory"
 
 info "Copying build files..."
-sudo cp -r dist/* "$DEPLOY_DIR/" || error_exit "Failed to copy files"
+sudo cp -r packages/frontend/dist/* "$DEPLOY_DIR/" || error_exit "Failed to copy files"
 
 info "Setting permissions..."
 sudo chown -R www-data:www-data "$DEPLOY_DIR" || error_exit "Failed to set ownership"
@@ -231,6 +237,7 @@ info "Branch: $DEPLOY_BRANCH"
 info "Commit: $(git log -1 --oneline)"
 info "Build size: $BUILD_SIZE"
 info "Deployed to: $DEPLOY_DIR"
+info "Source: $FRONTEND_DIR/packages/frontend"
 info "Backup location: $BACKUP_DIR"
 echo ""
 log "🌐 Access your application at:" "$GREEN"

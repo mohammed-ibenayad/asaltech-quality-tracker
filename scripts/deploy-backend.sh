@@ -26,7 +26,7 @@ NC='\033[0m' # No Color
 REPO_URL="${REPO_URL:-https://github.com/mohammed-ibenayad/asaltech-quality-tracker.git}"
 BACKEND_DIR="$HOME/quality-tracker-backend"
 LOG_FILE="$HOME/deploy-backend-$(date +%Y%m%d_%H%M%S).log"
-PM2_ECOSYSTEM="$BACKEND_DIR/ecosystem.config.js"
+PM2_ECOSYSTEM="$BACKEND_DIR/packages/backend/ecosystem.config.js"
 
 # Functions
 log() {
@@ -73,9 +73,15 @@ fi
 
 cd "$BACKEND_DIR" || error_exit "Cannot change to backend directory"
 
+# Verify this is the monorepo by checking for packages directory
+if [ ! -d "packages/backend" ]; then
+    error_exit "Cannot find packages/backend directory - is this the quality tracker monorepo?"
+fi
+
 # Determine branch to deploy
 DEPLOY_BRANCH="${1:-$(git branch --show-current)}"
 info "Target directory: $BACKEND_DIR"
+info "Backend package: packages/backend"
 info "Deploy branch: $DEPLOY_BRANCH"
 info "Log file: $LOG_FILE"
 
@@ -133,10 +139,14 @@ success "Dependencies installed"
 section "STEP 4: Database Check"
 
 info "Testing database connection..."
-if node database/test-connection.js 2>&1 | grep -q "ready for use"; then
-    success "Database connection verified"
+if [ -f "packages/backend/database/test-connection.js" ]; then
+    if node packages/backend/database/test-connection.js 2>&1 | grep -q "ready for use"; then
+        success "Database connection verified"
+    else
+        warning "Database connection test failed (continuing anyway)"
+    fi
 else
-    warning "Database connection test failed (continuing anyway)"
+    warning "Database test script not found (skipping)"
 fi
 
 # ==============================================================================
@@ -162,12 +172,17 @@ section "STEP 6: Starting Services"
 
 info "Starting services with PM2..."
 if [ -f "$PM2_ECOSYSTEM" ]; then
-    pm2 start "$PM2_ECOSYSTEM" || error_exit "Failed to start services"
+    # PM2 needs to be started from the backend package directory
+    cd packages/backend || error_exit "Cannot change to packages/backend"
+    pm2 start ecosystem.config.js || error_exit "Failed to start services"
+    cd ../.. || error_exit "Cannot return to root directory"
     success "Services started from ecosystem.config.js"
 else
     warning "ecosystem.config.js not found, starting manually..."
+    cd packages/backend || error_exit "Cannot change to packages/backend"
     pm2 start webhook-server.js --name quality-tracker-webhook
     pm2 start api-server.js --name quality-tracker-api
+    cd ../.. || error_exit "Cannot return to root directory"
     success "Services started manually"
 fi
 
@@ -231,7 +246,7 @@ success "Backend deployed successfully!"
 echo ""
 info "Branch: $DEPLOY_BRANCH"
 info "Commit: $(git log -1 --oneline)"
-info "Deployed to: $BACKEND_DIR"
+info "Deployed to: $BACKEND_DIR/packages/backend"
 echo ""
 log "📊 Service Status:" "$GREEN"
 pm2 status | grep quality-tracker
