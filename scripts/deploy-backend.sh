@@ -73,12 +73,15 @@ fi
 
 cd "$BACKEND_DIR" || error_exit "Cannot change to backend directory"
 
-# Navigate to backend package in monorepo
-cd packages/backend || error_exit "Cannot find packages/backend directory - is this the quality tracker monorepo?"
+# Verify this is the monorepo by checking for packages directory
+if [ ! -d "packages/backend" ]; then
+    error_exit "Cannot find packages/backend directory - is this the quality tracker monorepo?"
+fi
 
 # Determine branch to deploy
-DEPLOY_BRANCH="${1:-$(git -C "$BACKEND_DIR" branch --show-current)}"
-info "Target directory: $BACKEND_DIR/packages/backend"
+DEPLOY_BRANCH="${1:-$(git branch --show-current)}"
+info "Target directory: $BACKEND_DIR"
+info "Backend package: packages/backend"
 info "Deploy branch: $DEPLOY_BRANCH"
 info "Log file: $LOG_FILE"
 
@@ -87,13 +90,13 @@ info "Log file: $LOG_FILE"
 # ==============================================================================
 section "STEP 1: Checking Git Status"
 
-info "Current branch: $(git -C "$BACKEND_DIR" branch --show-current)"
-info "Last local commit: $(git -C "$BACKEND_DIR" log -1 --oneline)"
+info "Current branch: $(git branch --show-current)"
+info "Last local commit: $(git log -1 --oneline)"
 
 # Show uncommitted changes if any (but don't block deployment)
-if ! git -C "$BACKEND_DIR" diff-index --quiet HEAD --; then
+if ! git diff-index --quiet HEAD --; then
     warning "Local uncommitted changes detected (will be discarded):"
-    git -C "$BACKEND_DIR" status --short
+    git status --short
     info "These changes will be overwritten by force pull"
 else
     success "Working directory is clean"
@@ -105,20 +108,20 @@ fi
 section "STEP 2: Force Pulling Latest Changes"
 
 info "Fetching latest changes from remote..."
-git -C "$BACKEND_DIR" fetch origin || error_exit "Failed to fetch from remote"
+git fetch origin || error_exit "Failed to fetch from remote"
 
 info "Force checking out branch: $DEPLOY_BRANCH"
-git -C "$BACKEND_DIR" checkout -f "$DEPLOY_BRANCH" || error_exit "Failed to checkout branch $DEPLOY_BRANCH"
+git checkout -f "$DEPLOY_BRANCH" || error_exit "Failed to checkout branch $DEPLOY_BRANCH"
 
 info "Resetting to origin/$DEPLOY_BRANCH (discarding local changes)..."
-git -C "$BACKEND_DIR" reset --hard "origin/$DEPLOY_BRANCH" || error_exit "Failed to reset to remote branch"
+git reset --hard "origin/$DEPLOY_BRANCH" || error_exit "Failed to reset to remote branch"
 
 # Clean untracked files except .env and node_modules
 info "Cleaning untracked files (keeping .env)..."
-git -C "$BACKEND_DIR" clean -fd -e .env -e node_modules || warning "Clean failed (continuing anyway)"
+git clean -fd -e .env -e node_modules || warning "Clean failed (continuing anyway)"
 
 success "Code updated successfully (forced)"
-info "Current commit: $(git -C "$BACKEND_DIR" log -1 --oneline)"
+info "Current commit: $(git log -1 --oneline)"
 
 # ==============================================================================
 # STEP 3: INSTALL DEPENDENCIES
@@ -136,10 +139,14 @@ success "Dependencies installed"
 section "STEP 4: Database Check"
 
 info "Testing database connection..."
-if node database/test-connection.js 2>&1 | grep -q "ready for use"; then
-    success "Database connection verified"
+if [ -f "packages/backend/database/test-connection.js" ]; then
+    if node packages/backend/database/test-connection.js 2>&1 | grep -q "ready for use"; then
+        success "Database connection verified"
+    else
+        warning "Database connection test failed (continuing anyway)"
+    fi
 else
-    warning "Database connection test failed (continuing anyway)"
+    warning "Database test script not found (skipping)"
 fi
 
 # ==============================================================================
@@ -165,12 +172,17 @@ section "STEP 6: Starting Services"
 
 info "Starting services with PM2..."
 if [ -f "$PM2_ECOSYSTEM" ]; then
-    pm2 start "$PM2_ECOSYSTEM" || error_exit "Failed to start services"
+    # PM2 needs to be started from the backend package directory
+    cd packages/backend || error_exit "Cannot change to packages/backend"
+    pm2 start ecosystem.config.js || error_exit "Failed to start services"
+    cd ../.. || error_exit "Cannot return to root directory"
     success "Services started from ecosystem.config.js"
 else
     warning "ecosystem.config.js not found, starting manually..."
+    cd packages/backend || error_exit "Cannot change to packages/backend"
     pm2 start webhook-server.js --name quality-tracker-webhook
     pm2 start api-server.js --name quality-tracker-api
+    cd ../.. || error_exit "Cannot return to root directory"
     success "Services started manually"
 fi
 
@@ -233,7 +245,7 @@ echo ""
 success "Backend deployed successfully!"
 echo ""
 info "Branch: $DEPLOY_BRANCH"
-info "Commit: $(git -C "$BACKEND_DIR" log -1 --oneline)"
+info "Commit: $(git log -1 --oneline)"
 info "Deployed to: $BACKEND_DIR/packages/backend"
 echo ""
 log "📊 Service Status:" "$GREEN"
